@@ -27,6 +27,11 @@
 #define MAXRHS 1000
 #endif
 
+enum {
+  LANG_C,
+  LANG_PHP
+} target_lang = LANG_C;
+
 char *msort();
 extern void *malloc();
 
@@ -1386,6 +1391,17 @@ static void handle_D_option(char *z){
   *z = 0;
 }
 
+/* This routine is called in response to a -lPHP command line option. */
+static void handle_lang_option(char *z){
+  if (!strcasecmp(z, "PHP")) {
+    target_lang = LANG_PHP;
+  } else if (!strcasecmp(z, "C")) {
+    target_lang = LANG_C;
+  } else {
+    fprintf(stderr, "-l%s: supported languages are C, PHP\n", z);
+    exit(1);
+  }
+}
 
 /* The main program.  Parse the command line and do it... */
 int main(argc,argv)
@@ -1404,6 +1420,7 @@ char **argv;
     {OPT_FLAG, "c", (char*)&compress, "Don't compress the action table."},
     {OPT_FSTR, "D", (char*)handle_D_option, "Define an %ifdef macro."},
     {OPT_FLAG, "g", (char*)&rpflag, "Print grammar without actions."},
+    {OPT_FSTR, "l", (char*)handle_lang_option, "select target language."},
     {OPT_FLAG, "m", (char*)&mhflag, "Output a makeheaders compatible file"},
     {OPT_FLAG, "q", (char*)&quiet, "(Quiet) Don't print the report file."},
     {OPT_FLAG, "s", (char*)&statistics,
@@ -2994,11 +3011,17 @@ int *lineno;
 PRIVATE FILE *tplt_open(lemp)
 struct lemon *lemp;
 {
-  static char templatename[] = "lempar.c";
+  const char *templatename;
   char buf[1000];
   FILE *in;
   char *tpltname;
   char *cp;
+
+  if (target_lang == LANG_C) {
+    templatename = "lempar.c";
+  } else {
+    templatename = "lempar.php";
+  }
 
   cp = strrchr(lemp->filename,'.');
   if( cp ){
@@ -3203,7 +3226,11 @@ PRIVATE void translate_code(struct lemon *lemp, struct rule *rp){
       saved = *xp;
       *xp = 0;
       if( rp->lhsalias && strcmp(cp,rp->lhsalias)==0 ){
-        append_str("yygotominor.yy%d",0,rp->lhs->dtnum,0);
+        if (target_lang == LANG_C) {
+          append_str("yygotominor.yy%d",0,rp->lhs->dtnum,0);
+        } else {
+          append_str("$yygotominor",0,rp->lhs->dtnum,0);
+        }
         cp = xp;
         lhsused = 1;
       }else{
@@ -3212,7 +3239,11 @@ PRIVATE void translate_code(struct lemon *lemp, struct rule *rp){
             if( cp!=rp->code && cp[-1]=='@' ){
               /* If the argument is of the form @X then substituted
               ** the token number of X, not the value of X */
-              append_str("yymsp[%d].major",-1,i-rp->nrhs+1,0);
+              if (target_lang == LANG_C) {
+                append_str("yymsp[%d].major",-1,i-rp->nrhs+1,0);
+              } else {
+                append_str("$this->yystack[$this->yyidx + %d]->major",-1,i-rp->nrhs+1,0);
+              }
             }else{
               struct symbol *sp = rp->rhs[i];
               int dtnum;
@@ -3221,7 +3252,11 @@ PRIVATE void translate_code(struct lemon *lemp, struct rule *rp){
               }else{
                 dtnum = sp->dtnum;
               }
-              append_str("yymsp[%d].minor.yy%d",0,i-rp->nrhs+1, dtnum);
+              if (target_lang == LANG_C) {
+                append_str("yymsp[%d].minor.yy%d",0,i-rp->nrhs+1, dtnum);
+              } else {
+                append_str("$this->yystack[$this->yyidx + %d]->minor",0,i-rp->nrhs+1, dtnum);
+              }
             }
             cp = xp;
             used[i] = 1;
@@ -3252,8 +3287,13 @@ PRIVATE void translate_code(struct lemon *lemp, struct rule *rp){
       lemp->errorcnt++;
     }else if( rp->rhsalias[i]==0 ){
       if( has_destructor(rp->rhs[i],lemp) ){
-        append_str("  yy_destructor(%d,&yymsp[%d].minor);\n", 0,
-           rp->rhs[i]->index,i-rp->nrhs+1);
+        if (target_lang == LANG_C) {
+          append_str("  yy_destructor(%d,&yymsp[%d].minor);\n", 0,
+            rp->rhs[i]->index,i-rp->nrhs+1);
+        } else {
+          append_str("  $this->yy_destructor(%d,$this->yystack[$this->yyidx + %d]->minor);\n", 0,
+            rp->rhs[i]->index,i-rp->nrhs+1);
+        }
       }else{
         /* No destructor defined for this term */
       }
@@ -3389,17 +3429,20 @@ int mhflag;                 /* True if generating makeheaders output */
   fprintf(out,"#define %sTOKENTYPE %s\n",name,
     lemp->tokentype?lemp->tokentype:"void*");  lineno++;
   if( mhflag ){ fprintf(out,"#endif\n"); lineno++; }
-  fprintf(out,"typedef union {\n"); lineno++;
-  fprintf(out,"  %sTOKENTYPE yy0;\n",name); lineno++;
-  for(i=0; i<arraysize; i++){
-    if( types[i]==0 ) continue;
-    fprintf(out,"  %s yy%d;\n",types[i],i+1); lineno++;
-    free(types[i]);
+
+  if (target_lang == LANG_C) {
+    fprintf(out,"typedef union {\n"); lineno++;
+    fprintf(out,"  %sTOKENTYPE yy0;\n",name); lineno++;
+    for(i=0; i<arraysize; i++){
+      if( types[i]==0 ) continue;
+      fprintf(out,"  %s yy%d;\n",types[i],i+1); lineno++;
+      free(types[i]);
+    }
+    fprintf(out,"  int yy%d;\n",lemp->errsym->dtnum); lineno++;
+    free(types);
+    fprintf(out,"} YYMINORTYPE;\n"); lineno++;
   }
-  fprintf(out,"  int yy%d;\n",lemp->errsym->dtnum); lineno++;
   free(stddt);
-  free(types);
-  fprintf(out,"} YYMINORTYPE;\n"); lineno++;
   *plineno = lineno;
 }
 
@@ -3446,6 +3489,44 @@ static int axset_compare(const void *a, const void *b){
   return p2->nAction - p1->nAction;
 }
 
+static void emit_definev(FILE *out, int *lineno, const char *name,
+  const char *fmt, va_list ap)
+{
+  if (target_lang == LANG_C) {
+    fprintf(out, "#define %-30s", name);
+    vfprintf(out, fmt, ap);
+    fprintf(out, "\n");
+  } else if (target_lang == LANG_PHP) {
+    fprintf(out, "  const %s = ", name);
+    vfprintf(out, fmt, ap);
+    fprintf(out, ";\n");
+  }
+}
+
+static void emit_define(FILE *out, int *lineno, const char *name,
+  const char *fmt, ...)
+{
+  va_list ap;
+  va_start(ap, fmt);
+  emit_definev(out, lineno, name, fmt, ap);
+  va_end(ap);
+}
+
+
+static void emit_define_with_prefix(FILE *out, int *lineno, 
+  const char *prefix, const char *name, const char *fmt, ...)
+{
+  va_list ap;
+  char pname[1024];
+
+  snprintf(pname, sizeof(pname)-1, "%s%s", prefix, name);
+
+  va_start(ap, fmt);
+  emit_definev(out, lineno, pname, fmt, ap);
+  va_end(ap);
+}
+
+
 /* Generate C source code for the parser */
 void ReportTable(lemp, mhflag)
 struct lemon *lemp;
@@ -3466,7 +3547,10 @@ int mhflag;     /* Output in makeheaders format if true */
 
   in = tplt_open(lemp);
   if( in==0 ) return;
-  out = file_open(lemp,".c","wb");
+  out = file_open(lemp,
+    target_lang == LANG_C ? ".c"
+      : ".php",
+      "wb");
   if( out==0 ){
     fclose(in);
     return;
@@ -3478,34 +3562,39 @@ int mhflag;     /* Output in makeheaders format if true */
   tplt_print(out,lemp,lemp->include,lemp->includeln,&lineno);
   if( mhflag ){
     char *name = file_makename(lemp, ".h");
-    fprintf(out,"#include \"%s\"\n", name); lineno++;
+    fprintf(out, "#include \"%s\"\n", name);
+    lineno++;
     free(name);
   }
   tplt_xfer(lemp->name,in,out,&lineno);
 
   /* Generate #defines for all tokens */
-  if( mhflag ){
+  if( mhflag || target_lang == LANG_PHP){
     char *prefix;
-    fprintf(out,"#if INTERFACE\n"); lineno++;
+    if (target_lang == LANG_C) fprintf(out,"#if INTERFACE\n"); lineno++;
     if( lemp->tokenprefix ) prefix = lemp->tokenprefix;
     else                    prefix = "";
     for(i=1; i<lemp->nterminal; i++){
-      fprintf(out,"#define %s%-30s %2d\n",prefix,lemp->symbols[i]->name,i);
-      lineno++;
+      emit_define_with_prefix(out, &lineno, prefix,
+        lemp->symbols[i]->name, "%2d", i);
     }
-    fprintf(out,"#endif\n"); lineno++;
+    if (target_lang == LANG_C) fprintf(out,"#endif\n"); lineno++;
   }
   tplt_xfer(lemp->name,in,out,&lineno);
 
   /* Generate the defines */
-  fprintf(out,"#define YYCODETYPE %s\n",
-    minimum_size_type(0, lemp->nsymbol+5)); lineno++;
-  fprintf(out,"#define YYNOCODE %d\n",lemp->nsymbol+1);  lineno++;
-  fprintf(out,"#define YYACTIONTYPE %s\n",
-    minimum_size_type(0, lemp->nstate+lemp->nrule+5));  lineno++;
+  if (target_lang != LANG_PHP) {
+    emit_define(out, &lineno, "YYCODETYPE", "%s",
+      minimum_size_type(0, lemp->nsymbol+5));
+  }
+  emit_define(out, &lineno, "YYNOCODE", "%d", lemp->nsymbol+1);
+  if (target_lang != LANG_PHP) {
+    emit_define(out, &lineno, "YYACTIONTYPE", "%s",
+      minimum_size_type(0, lemp->nstate+lemp->nrule+5));
+  }
   if( lemp->wildcard ){
-    fprintf(out,"#define YYWILDCARD %d\n",
-       lemp->wildcard->index); lineno++;
+    emit_define(out, &lineno, "YYWILDCARD", "%d",
+       lemp->wildcard->index);
   }
   print_stack_union(out,lemp,&lineno,mhflag);
   if( lemp->stacksize ){
@@ -3516,40 +3605,42 @@ int mhflag;     /* Output in makeheaders format if true */
       lemp->errorcnt++;
       lemp->stacksize = "100";
     }
-    fprintf(out,"#define YYSTACKDEPTH %s\n",lemp->stacksize);  lineno++;
+    emit_define(out, &lineno, "YYSTACKDEPTH", "%s", lemp->stacksize);
   }else{
-    fprintf(out,"#define YYSTACKDEPTH 100\n");  lineno++;
+    emit_define(out, &lineno, "YYSTACKDEPTH", "100");
   }
   if( mhflag ){
     fprintf(out,"#if INTERFACE\n"); lineno++;
   }
   name = lemp->name ? lemp->name : "Parse";
-  if( lemp->arg && lemp->arg[0] ){
-    int i;
-    i = strlen(lemp->arg);
-    while( i>=1 && isspace(lemp->arg[i-1]) ) i--;
-    while( i>=1 && (isalnum(lemp->arg[i-1]) || lemp->arg[i-1]=='_') ) i--;
-    fprintf(out,"#define %sARG_SDECL %s;\n",name,lemp->arg);  lineno++;
-    fprintf(out,"#define %sARG_PDECL ,%s\n",name,lemp->arg);  lineno++;
-    fprintf(out,"#define %sARG_FETCH %s = yypParser->%s\n",
-                 name,lemp->arg,&lemp->arg[i]);  lineno++;
-    fprintf(out,"#define %sARG_STORE yypParser->%s = %s\n",
-                 name,&lemp->arg[i],&lemp->arg[i]);  lineno++;
-  }else{
-    fprintf(out,"#define %sARG_SDECL\n",name);  lineno++;
-    fprintf(out,"#define %sARG_PDECL\n",name);  lineno++;
-    fprintf(out,"#define %sARG_FETCH\n",name); lineno++;
-    fprintf(out,"#define %sARG_STORE\n",name); lineno++;
+  if( target_lang == LANG_C ) {
+    if( lemp->arg && lemp->arg[0] ){
+      int i;
+      i = strlen(lemp->arg);
+      while( i>=1 && isspace(lemp->arg[i-1]) ) i--;
+      while( i>=1 && (isalnum(lemp->arg[i-1]) || lemp->arg[i-1]=='_') ) i--;
+      fprintf(out,"#define %sARG_SDECL %s;\n",name,lemp->arg);  lineno++;
+      fprintf(out,"#define %sARG_PDECL ,%s\n",name,lemp->arg);  lineno++;
+      fprintf(out,"#define %sARG_FETCH %s = yypParser->%s\n",
+                   name,lemp->arg,&lemp->arg[i]);  lineno++;
+      fprintf(out,"#define %sARG_STORE yypParser->%s = %s\n",
+                   name,&lemp->arg[i],&lemp->arg[i]);  lineno++;
+    }else{
+      fprintf(out,"#define %sARG_SDECL\n",name);  lineno++;
+      fprintf(out,"#define %sARG_PDECL\n",name);  lineno++;
+      fprintf(out,"#define %sARG_FETCH\n",name); lineno++;
+      fprintf(out,"#define %sARG_STORE\n",name); lineno++;
+    }
   }
   if( mhflag ){
     fprintf(out,"#endif\n"); lineno++;
   }
-  fprintf(out,"#define YYNSTATE %d\n",lemp->nstate);  lineno++;
-  fprintf(out,"#define YYNRULE %d\n",lemp->nrule);  lineno++;
-  fprintf(out,"#define YYERRORSYMBOL %d\n",lemp->errsym->index);  lineno++;
-  fprintf(out,"#define YYERRSYMDT yy%d\n",lemp->errsym->dtnum);  lineno++;
+  emit_define(out, &lineno, "YYNSTATE", "%d", lemp->nstate);
+  emit_define(out, &lineno, "YYNRULE",  "%d", lemp->nrule);
+  emit_define(out, &lineno, "YYERRORSYMBOL", "%d", lemp->errsym->index);
+  emit_define(out, &lineno, "YYERRSYMDT", "yy%d", lemp->errsym->dtnum);
   if( lemp->has_fallback ){
-    fprintf(out,"#define YYFALLBACK 1\n");  lineno++;
+    emit_define(out, &lineno, "YYFALLBACK", "1");
   }
   tplt_xfer(lemp->name,in,out,&lineno);
 
@@ -3619,7 +3710,11 @@ int mhflag;     /* Output in makeheaders format if true */
   free(ax);
 
   /* Output the yy_action table */
-  fprintf(out,"static const YYACTIONTYPE yy_action[] = {\n"); lineno++;
+  if (target_lang == LANG_C) {
+    fprintf(out,"static const YYACTIONTYPE yy_action[] = {\n"); lineno++;
+  } else {
+    fprintf(out,"static $yy_action = array(\n"); lineno++;
+  }
   n = acttab_size(pActtab);
   for(i=j=0; i<n; i++){
     int action = acttab_yyaction(pActtab, i);
@@ -3633,10 +3728,18 @@ int mhflag;     /* Output in makeheaders format if true */
       j++;
     }
   }
-  fprintf(out, "};\n"); lineno++;
+  if (target_lang == LANG_C) {
+    fprintf(out, "};\n"); lineno++;
+  } else {
+    fprintf(out, ");\n"); lineno++;
+  }
 
   /* Output the yy_lookahead table */
-  fprintf(out,"static const YYCODETYPE yy_lookahead[] = {\n"); lineno++;
+  if (target_lang == LANG_C) {
+    fprintf(out,"static const YYCODETYPE yy_lookahead[] = {\n"); lineno++;
+  } else {
+    fprintf(out,"static $yy_lookahead = array(\n"); lineno++;
+  }
   for(i=j=0; i<n; i++){
     int la = acttab_yylookahead(pActtab, i);
     if( la<0 ) la = lemp->nsymbol;
@@ -3649,15 +3752,23 @@ int mhflag;     /* Output in makeheaders format if true */
       j++;
     }
   }
-  fprintf(out, "};\n"); lineno++;
+  if (target_lang == LANG_C) {
+    fprintf(out, "};\n"); lineno++;
+  } else {
+    fprintf(out, ");\n"); lineno++;
+  }
 
   /* Output the yy_shift_ofst[] table */
-  fprintf(out, "#define YY_SHIFT_USE_DFLT (%d)\n", mnTknOfst-1); lineno++;
+  emit_define(out, &lineno, "YY_SHIFT_USE_DFLT", "%d", mnTknOfst-1);
   n = lemp->nstate;
   while( n>0 && lemp->sorted[n-1]->iTknOfst==NO_OFFSET ) n--;
-  fprintf(out, "#define YY_SHIFT_MAX %d\n", n-1); lineno++;
-  fprintf(out, "static const %s yy_shift_ofst[] = {\n", 
+  emit_define(out, &lineno, "YY_SHIFT_MAX", "%d", n-1);
+  if (target_lang == LANG_C) {
+    fprintf(out, "static const %s yy_shift_ofst[] = {\n", 
           minimum_size_type(mnTknOfst-1, mxTknOfst)); lineno++;
+  } else {
+    fprintf(out, "static $yy_shift_ofst = array(\n"); lineno++;
+  }
   for(i=j=0; i<n; i++){
     int ofst;
     stp = lemp->sorted[i];
@@ -3672,15 +3783,23 @@ int mhflag;     /* Output in makeheaders format if true */
       j++;
     }
   }
-  fprintf(out, "};\n"); lineno++;
+  if (target_lang == LANG_C) {
+    fprintf(out, "};\n"); lineno++;
+  } else {
+    fprintf(out, ");\n"); lineno++;
+  }
 
   /* Output the yy_reduce_ofst[] table */
-  fprintf(out, "#define YY_REDUCE_USE_DFLT (%d)\n", mnNtOfst-1); lineno++;
+  emit_define(out, &lineno, "YY_REDUCE_USE_DFLT", "%d", mnNtOfst-1);
   n = lemp->nstate;
   while( n>0 && lemp->sorted[n-1]->iNtOfst==NO_OFFSET ) n--;
-  fprintf(out, "#define YY_REDUCE_MAX %d\n", n-1); lineno++;
-  fprintf(out, "static const %s yy_reduce_ofst[] = {\n", 
+  emit_define(out, &lineno, "YY_REDUCE_MAX", "%d", n-1);
+  if (target_lang == LANG_C) {
+    fprintf(out, "static const %s yy_reduce_ofst[] = {\n", 
           minimum_size_type(mnNtOfst-1, mxNtOfst)); lineno++;
+  } else {
+    fprintf(out, "static $yy_reduce_ofst = array(\n"); lineno++;
+  }
   for(i=j=0; i<n; i++){
     int ofst;
     stp = lemp->sorted[i];
@@ -3695,10 +3814,18 @@ int mhflag;     /* Output in makeheaders format if true */
       j++;
     }
   }
-  fprintf(out, "};\n"); lineno++;
+  if (target_lang == LANG_C) {
+    fprintf(out, "};\n"); lineno++;
+  } else {
+    fprintf(out, ");\n"); lineno++;
+  }
 
   /* Output the default action table */
-  fprintf(out, "static const YYACTIONTYPE yy_default[] = {\n"); lineno++;
+  if (target_lang == LANG_C) {
+    fprintf(out, "static const YYACTIONTYPE yy_default[] = {\n"); lineno++;
+  } else {
+    fprintf(out, "static $yy_default = array(\n"); lineno++;
+  }
   n = lemp->nstate;
   for(i=j=0; i<n; i++){
     stp = lemp->sorted[i];
@@ -3711,7 +3838,12 @@ int mhflag;     /* Output in makeheaders format if true */
       j++;
     }
   }
-  fprintf(out, "};\n"); lineno++;
+  if (target_lang == LANG_C) {
+    fprintf(out, "};\n"); lineno++;
+  } else {
+    fprintf(out, ");\n"); lineno++;
+  }
+
   tplt_xfer(lemp->name,in,out,&lineno);
 
   /* Generate the table of fallback tokens.
@@ -3733,7 +3865,11 @@ int mhflag;     /* Output in makeheaders format if true */
   /* Generate a table containing the symbolic name of every symbol
   */
   for(i=0; i<lemp->nsymbol; i++){
-    sprintf(line,"\"%s\",",lemp->symbols[i]->name);
+    if (target_lang == LANG_PHP) {
+      sprintf(line,"'%s',",lemp->symbols[i]->name);
+    } else {
+      sprintf(line,"\"%s\",",lemp->symbols[i]->name);
+    }
     fprintf(out,"  %-15s",line);
     if( (i&3)==3 ){ fprintf(out,"\n"); lineno++; }
   }
@@ -3818,11 +3954,15 @@ int mhflag;     /* Output in makeheaders format if true */
 
   /* Generate the table of rule information 
   **
-  ** Note: This code depends on the fact that rules are number
-  ** sequentually beginning with 0.
+  ** Note: This code depends on the fact that rules are numbered
+  ** sequentially beginning with 0.
   */
   for(rp=lemp->rule; rp; rp=rp->next){
-    fprintf(out,"  { %d, %d },\n",rp->lhs->index,rp->nrhs); lineno++;
+    if (target_lang == LANG_C) {
+      fprintf(out,"  { %d, %d },\n",rp->lhs->index,rp->nrhs); lineno++;
+    } else {
+      fprintf(out,"  %d, %d,\n",rp->lhs->index,rp->nrhs); lineno++;
+    }
   }
   tplt_xfer(lemp->name,in,out,&lineno);
 
@@ -4765,3 +4905,5 @@ int(*f)(/* struct config * */);
   x4a->count = 0;
   return;
 }
+/* vim:ts=2:sw=2:et:
+ */
