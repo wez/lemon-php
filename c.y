@@ -1,19 +1,12 @@
 %name C
 %token_prefix TK_
 
+/* this defines a symbol for the lexer */
 %nonassoc PRAGMA.
 
-%nonassoc IDENTIFIER CONSTANT STRING_LITERAL SIZEOF.
-%nonassoc PTR_OP INC_OP DEC_OP LEFT_OP RIGHT_OP LE_OP GE_OP EQ_OP NE_OP.
-%nonassoc AND_OP OR_OP MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN.
-%nonassoc SUB_ASSIGN LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN.
-%nonassoc XOR_ASSIGN OR_ASSIGN TYPE_NAME.
-
-%nonassoc TYPEDEF EXTERN STATIC AUTO REGISTER.
-%nonassoc CHAR SHORT INT LONG SIGNED UNSIGNED FLOAT DOUBLE CONST VOLATILE VOID.
-%nonassoc STRUCT UNION ENUM ELLIPSIS.
-
-%nonassoc CASE DEFAULT IF ELSE SWITCH WHILE DO FOR GOTO CONTINUE BREAK RETURN.
+/* the precedence of IF/ELSE solves the dangling else conflict */
+%nonassoc IF.
+%nonassoc ELSE.
 
 start ::= translation_unit.
 
@@ -21,6 +14,7 @@ primary_expression ::= IDENTIFIER.
 primary_expression ::= CONSTANT.
 primary_expression ::= STRING_LITERAL.
 primary_expression ::= LPAREN expression RPAREN.
+primary_expression ::= LPAREN error RPAREN.
 
 postfix_expression ::= primary_expression.
 postfix_expression ::= postfix_expression LSQUARE expression RSQUARE.
@@ -112,8 +106,10 @@ expression ::= expression COMMA assignment_expression.
 
 constant_expression ::= conditional_expression.
 
-declaration ::=  declaration_specifiers SEMIC.
-declaration ::=  declaration_specifiers init_declarator_list SEMIC.
+declaration ::= declaration_specifiers SEMIC.
+declaration ::= declaration_specifiers init_declarator_list SEMIC.
+declaration ::= error SEMIC.
+declaration ::= error RCURLY.
 
 declaration_specifiers ::= storage_class_specifier.
 declaration_specifiers ::= storage_class_specifier declaration_specifiers.
