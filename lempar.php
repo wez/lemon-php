@@ -88,9 +88,11 @@ class ParseParser {
 */
 %%
 
-var $YY_NO_ACTION;
-var $YY_ACCEPT_ACTION;
-var $YY_ERROR_ACTION;
+  /* since we cant use expressions to initialize these as class
+   * constants, we do so during parser init. */
+  var $YY_NO_ACTION;
+  var $YY_ACCEPT_ACTION;
+  var $YY_ERROR_ACTION;
 
 /* Next are that tables used to determine what action to take based on the
 ** current state and lookahead token.  These tables are used to implement
@@ -140,7 +142,6 @@ var $YY_ERROR_ACTION;
 **  yy_default[]       Default action for each state.
 */
 %%
-#define YY_SZ_ACTTAB (int)(sizeof(yy_action)/sizeof(yy_action[0]))
 
 /* The next table maps tokens into fallback tokens.  If a construct
 ** like the following:
@@ -286,7 +287,7 @@ private function yy_find_shift_action(
     return $this->YY_NO_ACTION;
   }
   $i += $iLookAhead;
-  if( $i<0 || $i>=self::YY_SZ_ACTTAB || self::$yy_lookahead[$i]!=$iLookAhead ){
+  if( $i<0 || $i>=count(self::$yy_action) || self::$yy_lookahead[$i]!=$iLookAhead ){
     if( $iLookAhead>0 ){
       if (isset(self::$yyFallback[$iLookAhead]) &&
         ($iFallback = self::$yyFallback[$iLookAhead]) != 0) {
@@ -299,7 +300,7 @@ private function yy_find_shift_action(
       }
       {
         $j = $i - $iLookAhead + self::YYWILDCARD;
-        if( $j>=0 && $j<self::YY_SZ_ACTTAB && self::$yy_lookahead[$j]==self::YYWILDCARD ){
+        if( $j>=0 && $j<count(self::$yy_action) && self::$yy_lookahead[$j]==self::YYWILDCARD ){
           if( $this->yyTraceFILE ){
             fprintf($this->yyTraceFILE, "%sWILDCARD %s => %s\n",
                $this->yyTracePrompt, self::$yyTokenName[$iLookAhead],
@@ -337,7 +338,7 @@ private function yy_find_reduce_action(
     return $this->YY_NO_ACTION;
   }
   $i += $iLookAhead;
-  if( $i<0 || $i>=self::YY_SZ_ACTTAB || self::$yy_lookahead[$i]!=$iLookAhead ){
+  if( $i<0 || $i>=count(self::$yy_action) || self::$yy_lookahead[$i]!=$iLookAhead ){
     return self::$yy_default[$stateno];
   }else{
     return self::$yy_action[$i];
@@ -365,7 +366,8 @@ private function yy_shift(
   if( $this->yyTraceFILE) {
     fprintf($this->yyTraceFILE,"%sShift %d\n",$this->yyTracePrompt,$yyNewState);
     fprintf($this->yyTraceFILE,"%sStack:",$this->yyTracePrompt);
-    foreach ($this->yystack as $ent) {
+    for ($i = 1; $i <= $this->yyidx; $i++) {
+      $ent = $this->yystack[$i];
       fprintf($this->yyTraceFILE," %s",self::$yyTokenName[$ent->major]);
     }
     fprintf($this->yyTraceFILE,"\n");
@@ -495,9 +497,8 @@ private function yy_accept(
 */
 function Parse(
   $yymajor,                 /* The major token code number */
-  $yyminor       /* The value for the token */
+  $yyminor = null           /* The value for the token */
 ){
-  $yyminorunion = null;
   $yyact = 0;            /* The parser action. */
   $yyendofinput = 0;     /* True if we are at the end of input */
   $yyerrorhit = 0;   /* True if yymajor has invoked an error */
@@ -515,7 +516,6 @@ function Parse(
     $this->YY_ACCEPT_ACTION  = self::YYNSTATE + self::YYNRULE + 1;
     $this->YY_ERROR_ACTION   = self::YYNSTATE + self::YYNRULE;
   }
-  $yyminorunion = $yyminor;
   $yyendofinput = ($yymajor==0);
 
   if( $this->yyTraceFILE ){
@@ -526,7 +526,7 @@ function Parse(
   do{
     $yyact = $this->yy_find_shift_action($yymajor);
     if( $yyact<self::YYNSTATE ){
-      $this->yy_shift($yyact,$yymajor,$yyminorunion);
+      $this->yy_shift($yyact,$yymajor,$yyminor);
       $this->yyerrcnt--;
       if( $yyendofinput && $this->yyidx>=0 ){
         $yymajor = 0;
@@ -560,7 +560,7 @@ if (self::YYERRORSYMBOL) {
       **
       */
       if( $this->yyerrcnt<0 ){
-        $this->yy_syntax_error($yymajor, $yyminorunion);
+        $this->yy_syntax_error($yymajor, $yyminor);
       }
       $yymx = $this->yystack[$this->yyidx]->major;
       if( $yymx==self::YYERRORSYMBOL || $yyerrorhit ){
@@ -568,7 +568,7 @@ if (self::YYERRORSYMBOL) {
           fprintf($this->yyTraceFILE,"%sDiscard input token %s\n",
              $this->yyTracePrompt,self::$yyTokenName[$yymajor]);
         }
-        $this->yy_destructor($yymajor,$yyminorunion);
+        $this->yy_destructor($yymajor,$yyminor);
         $yymajor = self::YYNOCODE;
       }else{
          while(
@@ -581,7 +581,7 @@ if (self::YYERRORSYMBOL) {
           $this->yy_pop_parser_stack();
         }
         if( $this->yyidx < 0 || $yymajor==0 ){
-          $this->yy_destructor($yymajor,$yyminorunion);
+          $this->yy_destructor($yymajor,$yyminor);
           $this->yy_parse_failed();
           $yymajor = self::YYNOCODE;
         }else if( $yymx!=self::YYERRORSYMBOL ){
@@ -601,10 +601,10 @@ if (self::YYERRORSYMBOL) {
       ** three input tokens have been successfully shifted.
       */
       if( $this->yyerrcnt<=0 ){
-        $this->yy_syntax_error($yymajor, $yyminorunion);
+        $this->yy_syntax_error($yymajor, $yyminor);
       }
       $this->yyerrcnt = 3;
-      $this->yy_destructor($yymajor,$yyminorunion);
+      $this->yy_destructor($yymajor,$yyminor);
       if( $yyendofinput ){
         $this->yy_parse_failed();
       }
@@ -615,7 +615,6 @@ if (self::YYERRORSYMBOL) {
       $yymajor = self::YYNOCODE;
     }
   }while( $yymajor!=self::YYNOCODE && $this->yyidx>=0 );
-  return;
 }
 
 }
