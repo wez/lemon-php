@@ -1,5 +1,6 @@
-/* This is a lemon grammar for the C language */
-%name C
+/* This is a lemon grammar for the C language,
+ * with some Objective C extensions */
+%name ObjC
 %token_prefix TK_
 
 /* this defines a symbol for the lexer */
@@ -282,9 +283,135 @@ translation_unit ::= translation_unit external_declaration.
 
 external_declaration ::= function_definition.
 external_declaration ::= declaration.
+external_declaration ::= objc_declaration.
 
 function_definition ::= declaration_specifiers declarator declaration_list compound_statement.
 function_definition ::= declaration_specifiers declarator compound_statement.
 function_definition ::= declarator declaration_list compound_statement.
 function_definition ::= declarator compound_statement.
+
+objc_declaration ::= objc_class_def.
+objc_declaration ::= objc_class_decl.
+objc_declaration ::= objc_alias_decl.
+objc_declaration ::= objc_protocol_def.
+objc_declaration ::= objc_method_def.
+objc_declaration ::= AT_END.
+
+objc_alias_decl ::= AT_ALIAS IDENTIFIER IDENTIFIER SEMIC.
+objc_class_decl ::= AT_CLASS identifier_list SEMIC.
+
+objc_class_def ::= AT_INTERFACE IDENTIFIER
+					objc_protocol_refs 
+					LCURLY objc_impl_var_decl_list RCURLY
+					objc_method_proto_list
+					AT_END.
+objc_class_def ::= AT_INTERFACE IDENTIFIER 
+					objc_protocol_refs
+					objc_method_proto_list
+					AT_END.
+objc_class_def ::= AT_INTERFACE IDENTIFIER COLON IDENTIFIER
+					objc_protocol_refs
+					LCURLY objc_impl_var_decl_list RCURLY
+					objc_method_proto_list
+					AT_END.
+objc_class_def ::= AT_INTERFACE IDENTIFIER COLON IDENTIFIER
+					objc_protocol_refs
+					objc_method_proto_list
+					AT_END.
+objc_class_def ::= AT_INTERFACE IDENTIFIER LPAREN IDENTIFIER RPAREN
+					objc_protocol_refs
+					objc_method_proto_list
+					AT_END.
+
+objc_class_def ::= AT_IMPLEMENTATION IDENTIFIER.
+objc_class_def ::= AT_IMPLEMENTATION IDENTIFIER COLON IDENTIFIER
+					LCURLY objc_impl_var_decl_list RCURLY.
+objc_class_def ::= AT_IMPLEMENTATION IDENTIFIER COLON IDENTIFIER.
+objc_class_def ::= AT_IMPLEMENTATION IDENTIFIER LPAREN IDENTIFIER RPAREN.
+
+objc_protocol_def ::= AT_PROTOCOL IDENTIFIER objc_protocol_refs
+					objc_method_proto_list
+					AT_END.
+
+objc_protocol_refs ::= .
+objc_protocol_refs ::= LANGLE identifier_list RANGLE.
+
+objc_impl_var_decl_list ::= objc_impl_var_decl_list objc_visibility_spec
+							objc_impl_var_decls.
+objc_impl_var_decl_list ::= objc_impl_var_decls.
+
+objc_visibility_spec ::= AT_PRIVATE.
+objc_visibility_spec ::= AT_PROTECTED.
+objc_visibility_spec ::= AT_PUBLIC.
+
+objc_impl_var_decls ::= .
+objc_impl_var_decls ::= objc_impl_var_decls objc_impl_var_decl SEMIC.
+objc_impl_var_decls ::= objc_impl_var_decls SEMIC. /* stray ; */
+
+objc_impl_var_decl ::= struct_declarator.
+
+objc_method_def ::= PLUS objc_method_decl objc_opt_arg_list compound_statement.
+objc_method_def ::= MINUS objc_method_decl objc_opt_arg_list compound_statement.
+
+
+objc_method_decl ::= LPAREN type_name RPAREN objc_unary_selector.
+objc_method_decl ::= objc_unary_selector.
+objc_method_decl ::= LPAREN type_name RPAREN objc_keyword_selector objc_opt_param_list.
+objc_method_decl ::= objc_keyword_selector objc_opt_param_list.
+
+objc_opt_param_list ::= .
+objc_opt_param_list ::= COMMA ELLIPSIS.
+objc_opt_param_list ::= COMMA.
+objc_opt_param_list ::= FIXME. /* FIXME */
+
+objc_unary_selector ::= objc_selector.
+objc_keyword_selector ::= objc_keyword_decl.
+objc_keyword_selector ::= objc_keyword_selector objc_keyword_decl.
+
+objc_selector ::= IDENTIFIER.
+objc_selector ::= TYPE_NAME.
+objc_selector ::= OBJECTNAME. /* what's this? */
+objc_selector ::= objc_reserved_words.
+
+objc_reserved_words ::= ENUM.
+objc_reserved_words ::= STRUCT.
+objc_reserved_words ::= UNION.
+objc_reserved_words ::= IF.
+objc_reserved_words ::= ELSE.
+objc_reserved_words ::= WHILE.
+objc_reserved_words ::= DO.
+objc_reserved_words ::= FOR.
+objc_reserved_words ::= SWITCH.
+objc_reserved_words ::= CASE.
+objc_reserved_words ::= DEFAULT.
+objc_reserved_words ::= BREAK.
+objc_reserved_words ::= CONTINUE.
+objc_reserved_words ::= RETURN.
+objc_reserved_words ::= GOTO.
+objc_reserved_words ::= SIZEOF.
+objc_reserved_words ::= TYPEOF.
+
+objc_keyword_decl ::= objc_selector COLON LPAREN type_name RPAREN IDENTIFIER.
+objc_keyword_decl ::= objc_selector COLON IDENTIFIER.
+objc_keyword_decl ::= COLON LPAREN type_name RPAREN IDENTIFIER.
+objc_keyword_decl ::= COLON IDENTIFIER.
+
+objc_method_proto_list ::= .
+objc_method_proto_list ::= objc_method_proto_list2.
+
+objc_method_proto_list2 ::= objc_method_proto.
+objc_method_proto_list2 ::= objc_method_proto_list2 objc_method_proto.
+objc_method_proto_list2 ::= declaration.
+objc_method_proto_list2 ::= objc_method_proto_list2 declaration.
+
+objc_method_proto ::= PLUS objc_method_decl SEMIC.
+objc_method_proto ::= MINUS objc_method_decl SEMIC.
+
+objc_opt_arg_list ::= .
+objc_opt_arg_list ::= SEMIC objc_arg_list.
+
+objc_arg_list ::= objc_arg.
+objc_arg_list ::= objc_arg_list objc_arg.
+
+objc_arg ::= parameter_declaration SEMIC.
 
