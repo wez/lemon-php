@@ -1,0 +1,31 @@
+(for licensing and copyright information, see COPYING)
+
+This is an adaptation of lemon that optionally emits PHP code to implement a
+parser for the grammar described in a .y file.
+
+Usage:
+
+ cc -o lemon lemon.c
+ lemon -lPHP my.y
+
+This will output my.php, which contains a PHP class that implements your parser.
+Usage is along the lines of:
+
+$P = new ParseParser();
+$S = new Yylex(); // you can get one of these using the JLexPHP package
+
+while ($t = $S->yylex()) {
+	$P->Parse($t->type, $t);
+}
+$P->Parse(0);
+
+
+You can find out more about the lemon syntax from:
+http://www.hwaci.com/sw/lemon/lemon.html
+
+
+Enjoy!
+
+--Wez.
+wez@omniti.com
+
