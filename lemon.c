@@ -3638,7 +3638,10 @@ int mhflag;     /* Output in makeheaders format if true */
   emit_define(out, &lineno, "YYNSTATE", "%d", lemp->nstate);
   emit_define(out, &lineno, "YYNRULE",  "%d", lemp->nrule);
   emit_define(out, &lineno, "YYERRORSYMBOL", "%d", lemp->errsym->index);
-  emit_define(out, &lineno, "YYERRSYMDT", "yy%d", lemp->errsym->dtnum);
+
+  if( target_lang == LANG_C ){
+    emit_define(out, &lineno, "YYERRSYMDT", "yy%d", lemp->errsym->dtnum);
+  }
   if( lemp->has_fallback ){
     emit_define(out, &lineno, "YYFALLBACK", "1");
   }
